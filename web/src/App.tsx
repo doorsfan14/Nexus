@@ -7,6 +7,7 @@ type Profile = { id: string; username: string; full_name: string | null; avatar_
 type Media = { id: string; media_url: string; media_type: string };
 type Post = { id: string; user_id: string; caption: string; location: string | null; created_at: string; profiles: Profile; post_media: Media[]; post_likes: { user_id: string }[]; comments?: { count: number }[] };
 type Comment = { id: string; content: string; created_at: string; profiles: Profile };
+type Story = { id: string; user_id: string; media_url: string; media_type: string; expires_at: string; profiles: Profile };
 type Screen = "home" | "explore" | "messages" | "notifications" | "profile" | "saved" | "settings";
 const fallbackAvatar = "https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y";
 const dateLabel = (value: string) => { const seconds = Math.max(1, Math.floor((Date.now() - new Date(value).getTime()) / 1000)); if (seconds < 60) return seconds + "s"; if (seconds < 3600) return Math.floor(seconds / 60) + "m"; if (seconds < 86400) return Math.floor(seconds / 3600) + "h"; return Math.floor(seconds / 86400) + "d"; };
@@ -47,7 +48,7 @@ function PostCard({ post, currentUser, onLike, onComment, onProfile, onSave, sav
       <div className="post-author"><button onClick={() => onProfile(post.profiles)}>{post.profiles?.username || "user"}</button>{post.location && <span>{post.location}</span>}</div>
       <span className="post-time">{dateLabel(post.created_at)}</span><button className="icon-button subtle"><MoreHorizontal size={21}/></button>
     </header>
-    {media ? <img className="post-media" src={media.media_url} alt={post.caption || "Post"} loading="lazy"/> : <div className="text-post-media">{post.caption}</div>}
+    {media?.media_type === "video" ? <video className="post-media" src={media.media_url} controls playsInline preload="metadata"/> : media ? <img className="post-media" src={media.media_url} alt={post.caption || "Post"} loading="lazy"/> : <div className="text-post-media">{post.caption}</div>}
     <div className="post-controls"><div className="post-control-group">
       <button className={"icon-button " + (liked ? "liked" : "")} aria-label={liked ? "Unlike" : "Like"} onClick={() => onLike(post)}><Heart size={25} fill={liked ? "currentColor" : "none"}/></button>
       <button className="icon-button" aria-label="Comment" onClick={() => onComment(post)}><MessageCircle size={24}/></button>
@@ -67,6 +68,11 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null); const [user, setUser] = useState<User | null>(null); const [profile, setProfile] = useState<Profile | null>(null);
+  const [stories, setStories] = useState<Story[]>([]);
+  const [activeStory, setActiveStory] = useState<Story | null>(null);
+  const [storyComposerOpen, setStoryComposerOpen] = useState(false);
+  const [storyFile, setStoryFile] = useState<File | null>(null);
+  const [publishingStory, setPublishingStory] = useState(false);
   const [screen, setScreen] = useState<Screen>("home"); const [posts, setPosts] = useState<Post[]>([]); const [loading, setLoading] = useState(false); const [notice, setNotice] = useState("");
   const [query, setQuery] = useState(""); const [people, setPeople] = useState<Profile[]>([]); const [targetProfile, setTargetProfile] = useState<Profile | null>(null); const [targetPosts, setTargetPosts] = useState<Post[]>([]);
   const [followers, setFollowers] = useState(0); const [following, setFollowing] = useState(0); const [isFollowing, setIsFollowing] = useState(false);
@@ -97,6 +103,14 @@ export default function App() {
     if (!supabase || !user) return;
     supabase.from("saved_posts").select("post_id").eq("user_id", user.id).then(({ data }) => setSavedIds((data || []).map(x => x.post_id)));
   }, [user?.id]);
+  const loadStories = useCallback(async () => {
+    if (!supabase || !user) return;
+    const { data, error } = await supabase.from("stories")
+      .select("id,user_id,media_url,media_type,expires_at,profiles!stories_user_id_fkey(id,username,full_name,avatar_url,bio,website)")
+      .gt("expires_at", new Date().toISOString()).order("created_at", { ascending: true }).limit(100);
+    if (error) setNotice(error.message); else setStories((data || []) as unknown as Story[]);
+  }, [user?.id]);
+  useEffect(() => { loadStories(); }, [loadStories]);
 
   const openProfile = async (person: Profile) => {
     if (!supabase) return; setTargetProfile(person); setScreen("profile"); setTargetPosts([]);
@@ -145,6 +159,24 @@ export default function App() {
       }
       setCaption(""); setLocation(""); setFile(null); setComposerOpen(false); await loadFeed();
     } catch (e) { setNotice(e instanceof Error ? e.message : "Post could not be published."); } finally { setPublishing(false); }
+  };
+  const publishStory = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!supabase || !user || !storyFile) return;
+    setPublishingStory(true); setNotice("");
+    try {
+      const extension = storyFile.name.split(".").pop()?.toLowerCase() || "jpg";
+      const path = user.id + "/" + crypto.randomUUID() + "." + extension;
+      const { error: uploadError } = await supabase.storage.from("post-media").upload(path, storyFile, { contentType: storyFile.type, upsert: false });
+      if (uploadError) throw uploadError;
+      const mediaUrl = supabase.storage.from("post-media").getPublicUrl(path).data.publicUrl;
+      const { error } = await supabase.from("stories").insert({
+        user_id: user.id, storage_path: path, media_url: mediaUrl
+      });
+      if (error) throw error;
+      setStoryFile(null); setStoryComposerOpen(false); await loadStories();
+    } catch (e) { setNotice(e instanceof Error ? e.message : "Story could not be published."); }
+    finally { setPublishingStory(false); }
   };
   const openComments = async (post: Post) => {
     setCommentPost(post); setComments([]); setCommentText(""); if (!supabase) return;
@@ -209,8 +241,9 @@ export default function App() {
     <main className="main-column">
       <div className="mobile-topbar"><button className="brand" onClick={() => go("home")}>nexus</button><div><button className="icon-button" onClick={() => go("notifications")}><Heart/></button><button className="icon-button" onClick={() => go("messages")}><Send/></button></div></div>
       {screen === "home" && <>
-        <div className="stories-strip"><button className="story" onClick={() => setComposerOpen(true)}><span className="story-ring own"><Avatar profile={profile} size={58}/><i>+</i></span><span>Your story</span></button>
-          {posts.filter(p => p.user_id !== user.id).slice(0, 12).map(p => <button className="story" key={p.user_id} onClick={() => openProfile(p.profiles)}><span className="story-ring"><Avatar profile={p.profiles} size={58}/></span><span>{p.profiles?.username}</span></button>)}
+        <div className="stories-strip"><button className="story" onClick={() => setStoryComposerOpen(true)}><span className="story-ring own"><Avatar profile={profile} size={58}/><i>+</i></span><span>Your story</span></button>
+          {Array.from(new Map(stories.map(story => [story.user_id, story])).values()).filter(story => story.user_id !== user.id).map(story => <button className="story" key={story.user_id} onClick={() => setActiveStory(story)}><span className="story-ring"><Avatar profile={story.profiles} size={58}/></span><span>{story.profiles?.username}</span></button>)}
+          {stories.filter(story => story.user_id === user.id).slice(-1).map(story => <button className="story" key={story.id} onClick={() => setActiveStory(story)}><span className="story-ring"><Avatar profile={profile} size={58}/></span><span>Your story</span></button>)}
         </div>
         <section className="feed-list">{loading && posts.length === 0 && <div className="loading-state"><LoaderCircle className="spin"/> Loading your feed</div>}
           {!loading && posts.length === 0 && <div className="empty-state"><Camera size={34}/><h2>Your feed starts here</h2><p>Follow people or share your first post to get things moving.</p><button className="primary-button" onClick={() => setComposerOpen(true)}>Create your first post</button></div>}
@@ -244,6 +277,11 @@ export default function App() {
       <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Write a caption…" maxLength={2200}/><input value={location} onChange={e => setLocation(e.target.value)} placeholder="Add location (optional)"/>
       <button className="primary-button" disabled={publishing}>{publishing ? "Sharing…" : "Share"}</button>
     </form></Modal>}
+    {storyComposerOpen && <Modal title="Add to your story" onClose={() => { setStoryComposerOpen(false); setStoryFile(null); }}><form className="composer-form" onSubmit={publishStory}>
+      <label className="upload-area">{storyFile ? <>{storyFile.type.startsWith("video/") ? <video src={URL.createObjectURL(storyFile)} controls playsInline/> : <img src={URL.createObjectURL(storyFile)} alt="Story preview"/>}</> : <><ImagePlus size={40}/><strong>Choose a photo or video</strong><span>Stories disappear after 24 hours</span></>}<input type="file" accept="image/*,video/mp4" onChange={e => setStoryFile(e.target.files?.[0] || null)}/></label>
+      <button className="primary-button" disabled={!storyFile || publishingStory}>{publishingStory ? "Sharing…" : "Share to story"}</button>
+    </form></Modal>}
+    {activeStory && <Modal title={activeStory.profiles?.username || "Story"} onClose={() => setActiveStory(null)}><div className="story-viewer">{activeStory.media_type === "video" ? <video src={activeStory.media_url} controls autoPlay playsInline/> : <img src={activeStory.media_url} alt="Story"/>}</div></Modal>}
     {commentPost && <Modal title="Comments" onClose={() => setCommentPost(null)}><div className="comments-list">{comments.map(c => <div className="comment-row" key={c.id}><Avatar profile={c.profiles} size={30}/><p><strong>{c.profiles?.username}</strong> {c.content}<small>{dateLabel(c.created_at)}</small></p></div>)}{comments.length === 0 && <p className="muted">Be the first to comment.</p>}</div>
       <form className="comment-form" onSubmit={sendComment}><input value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="Add a comment…"/><button disabled={!commentText.trim()}>Post</button></form>
     </Modal>}
