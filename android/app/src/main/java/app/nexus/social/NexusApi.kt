@@ -51,7 +51,7 @@ data class NexusComment(val id: String, val username: String, val avatarUrl: Str
 }
 data class NexusConversation(val id: String, val username: String, val avatarUrl: String)
 data class NexusMessage(val id: String, val senderId: String, val body: String)
-data class NexusStory(val id: String, val userId: String, val username: String, val avatarUrl: String, val mediaUrl: String, val mediaType: String) {
+data class NexusDevice(val id: String, val deviceId: String, val name: String, val platform: String, val lastSeen: String, val revoked: Boolean)\ndata class NexusStory(val id: String, val userId: String, val username: String, val avatarUrl: String, val mediaUrl: String, val mediaType: String) {
     companion object {
         fun from(json: JSONObject): NexusStory {
             val p = json.optJSONObject("profiles") ?: JSONObject()
