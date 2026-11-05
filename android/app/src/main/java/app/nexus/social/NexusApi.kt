@@ -69,6 +69,7 @@ class NexusApi(context: Context) {
     val isConfigured: Boolean get() = baseUrl.startsWith("https://") && anonKey.isNotBlank()
     val isSignedIn: Boolean get() = !accessToken.isNullOrBlank()
     val userId: String get() = prefs.getString("user_id", "").orEmpty()
+    val currentDeviceId: String get() = deviceId
     private val accessToken: String? get() = prefs.getString("access_token", null)
 
     private suspend fun request(
