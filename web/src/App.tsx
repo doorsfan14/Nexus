@@ -225,12 +225,13 @@ export default function App() {
   };
   const loadSessions = async () => { if (!supabase || !user) return; const { data, error } = await supabase.from("device_sessions").select("id,device_id,device_name,platform,last_seen,revoked_at").eq("user_id", user.id).order("last_seen", { ascending: false }); if (error) setNotice(error.message); else setSessions(data || []); };
   useEffect(() => {
-    if (!supabase || !user) return;
+    const client = supabase;
+    if (!client || !user) return;
     const ua = navigator.userAgent; const platform = /android/i.test(ua) ? "Android" : /iphone|ipad/i.test(ua) ? "iOS" : /mac/i.test(ua) ? "macOS" : /win/i.test(ua) ? "Windows" : "Browser";
     const deviceName = /iphone/i.test(ua) ? "iPhone" : /ipad/i.test(ua) ? "iPad" : /android/i.test(ua) ? "Android device" : /mac/i.test(ua) ? "Mac" : /win/i.test(ua) ? "Windows PC" : "Web browser";
-    const register = async () => { await supabase.from("device_sessions").upsert({ user_id: user.id, device_id: deviceId, device_name: deviceName, platform, last_seen: new Date().toISOString(), revoked_at: null }, { onConflict: "user_id,device_id" }); await loadSessions(); };
+    const register = async () => { await client.from("device_sessions").upsert({ user_id: user.id, device_id: deviceId, device_name: deviceName, platform, last_seen: new Date().toISOString(), revoked_at: null }, { onConflict: "user_id,device_id" }); await loadSessions(); };
     register();
-    const timer = window.setInterval(async () => { const { data } = await supabase.from("device_sessions").select("revoked_at").eq("user_id", user.id).eq("device_id", deviceId).maybeSingle(); if (data?.revoked_at) await supabase.auth.signOut(); else await supabase.from("device_sessions").update({ last_seen: new Date().toISOString() }).eq("user_id", user.id).eq("device_id", deviceId); }, 30000);
+    const timer = window.setInterval(async () => { const { data } = await client.from("device_sessions").select("revoked_at").eq("user_id", user.id).eq("device_id", deviceId).maybeSingle(); if (data?.revoked_at) await client.auth.signOut(); else await client.from("device_sessions").update({ last_seen: new Date().toISOString() }).eq("user_id", user.id).eq("device_id", deviceId); }, 30000);
     return () => window.clearInterval(timer);
   }, [user?.id, deviceId]);
   const go = (next: Screen) => {
