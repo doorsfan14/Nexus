@@ -5,3 +5,42 @@
 
 .story-viewer{height:min(75vh,760px);display:grid;place-items:center;background:#111}.story-viewer img,.story-viewer video{max-width:100%;max-height:75vh;width:auto;height:auto;object-fit:contain}
 .upload-area video{max-width:100%;max-height:280px;object-fit:contain}
+
+
+/* Adaptive layouts for phones and tablets */
+.mobile-chat-back{display:none}
+@media (min-width:681px) and (max-width:1180px){
+  .app-shell{grid-template-columns:64px minmax(0,min(680px,calc(100vw - 132px)));justify-content:center;column-gap:20px;padding:0 24px}
+  .main-column{min-width:0;max-width:none}
+  .right-rail{display:none}
+}
+@media (min-width:681px) and (max-width:840px){
+  .app-shell{grid-template-columns:56px minmax(0,1fr);column-gap:18px;padding:0 18px}
+  .sidebar{padding-right:8px}
+  .main-column{padding-top:22px}
+  .messages-layout{grid-template-columns:170px minmax(0,1fr)}
+  .conversation-row{padding:11px 8px}
+}
+@media (max-width:680px){
+  html,body,#root{min-height:100%;width:100%}
+  body{overflow-x:hidden}
+  .app-shell{min-height:100svh;padding-bottom:calc(58px + env(safe-area-inset-bottom))}
+  .mobile-topbar{position:sticky;top:0;z-index:25;background:#fff;height:calc(54px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top)}
+  .mobile-nav{height:calc(56px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom)}
+  .mobile-nav button{min-width:44px;min-height:44px;display:grid;place-items:center}
+  .messages-page{padding-left:0;padding-right:0}
+  .messages-page>h1{padding-left:14px}
+  .messages-layout{height:calc(100dvh - 164px - env(safe-area-inset-top));min-height:0;grid-template-columns:minmax(0,1fr)}
+  .messages-layout:not(.conversation-active) .chat-panel{display:none}
+  .messages-layout.conversation-active .conversation-list{display:none}
+  .messages-layout.conversation-active .chat-panel{display:flex}
+  .mobile-chat-back{display:inline-flex}
+  .toast{bottom:calc(66px + env(safe-area-inset-bottom))}
+  .modal-backdrop{padding: max(8px,env(safe-area-inset-top)) 8px max(8px,env(safe-area-inset-bottom))}
+  .modal{max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+  .profile-heading{align-items:flex-start}
+  .profile-summary{min-width:0}
+  .profile-stats{flex-wrap:wrap}
+  .composer-form{padding:12px}
+  .upload-area{min-height:180px}
+}
