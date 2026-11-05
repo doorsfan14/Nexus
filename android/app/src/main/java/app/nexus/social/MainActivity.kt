@@ -129,7 +129,7 @@ private fun NexusApp(api: NexusApi) {
                 profile = api.profile()
                 editName = profile?.fullName.orEmpty()
                 editUsername = profile?.username.orEmpty()
-                api.registerDevice()
+                try { api.registerDevice() } catch (_: Throwable) {}
                 editBio = profile?.bio.orEmpty()
                 feed = api.feed()
                 savedPosts = api.savedPosts()
