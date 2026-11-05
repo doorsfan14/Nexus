@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import android.widget.VideoView
 import coil.compose.AsyncImage
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.launch\nimport kotlinx.coroutines.delay
 import java.util.Locale
 
 private val Ink = Color(0xFF171717)
@@ -82,7 +82,7 @@ private fun NexusApp(api: NexusApi) {
     var messageDraft by remember { mutableStateOf("") }
     var notifications by remember { mutableStateOf(emptyList<String>()) }
     var profileEditOpen by remember { mutableStateOf(false) }
-    var editName by remember { mutableStateOf("") }
+    var editName by remember { mutableStateOf("") }\n    var editUsername by remember { mutableStateOf("") }\n    var deviceRows by remember { mutableStateOf(emptyList<NexusDevice>()) }\n    var securityOpen by remember { mutableStateOf(false) }\n    var newPassword by remember { mutableStateOf("") }
     var editBio by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { selectedImage = it }
@@ -131,7 +131,7 @@ private fun NexusApp(api: NexusApi) {
             } catch (t: Throwable) { report(t) }
         } else { profile = null; feed = emptyList() }
     }
-    LaunchedEffect(screen, signedIn) {
+    LaunchedEffect(signedIn) {\n        while (signedIn) {\n            delay(30000)\n            try { if (api.isDeviceRevoked()) { api.signOut(); signedIn = false } else api.registerDevice() } catch (_: Throwable) {}\n        }\n    }\n    LaunchedEffect(screen, signedIn) {
         if (!signedIn) return@LaunchedEffect
         if (screen == "Messages") try { conversations = api.conversations() } catch (t: Throwable) { report(t) }
         if (screen == "Notifications") try { notifications = api.notifications() } catch (t: Throwable) { report(t) }
@@ -221,7 +221,7 @@ private fun NexusApp(api: NexusApi) {
                         val person = viewedProfile ?: profile
                         if (person != null) ProfileScreen(
                             person, if (viewedProfile == null) feed.filter { it.userId == api.userId } else viewedPosts,
-                            person.id == api.userId, following, followerCount, followingCount, { profileEditOpen = true }, { screen = "Saved" },
+                            person.id == api.userId, following, followerCount, followingCount, { profileEditOpen = true }, { screen = "Saved" }, { securityOpen = true; scope.launch { try { deviceRows = api.deviceSessions() } catch (t: Throwable) { report(t) } } },
                             { scope.launch { try { api.follow(person.id, following); following = !following; followerCount += if (following) 1 else -1 } catch (t: Throwable) { report(t) } } },
                             {
                                 scope.launch { try {
@@ -427,7 +427,7 @@ private fun ExploreScreen(query: String, people: List<NexusProfile>, onQuery: (S
 }
 
 @Composable
-private fun ProfileScreen(person: NexusProfile, posts: List<NexusPost>, isOwn: Boolean, following: Boolean, followerCount: Int, followingCount: Int, onEdit: () -> Unit, onSaved: () -> Unit, onFollow: () -> Unit, onMessage: () -> Unit, onComment: (NexusPost) -> Unit, modifier: Modifier = Modifier) {
+private fun ProfileScreen(person: NexusProfile, posts: List<NexusPost>, isOwn: Boolean, following: Boolean, followerCount: Int, followingCount: Int, onEdit: () -> Unit, onSaved: () -> Unit, onSecurity: () -> Unit, onFollow: () -> Unit, onMessage: () -> Unit, onComment: (NexusPost) -> Unit, modifier: Modifier = Modifier) {
     LazyColumn(modifier.fillMaxSize()) {
         item {
             Column(Modifier.fillMaxWidth().padding(18.dp)) {
@@ -581,11 +581,35 @@ private fun CommentDialog(post: NexusPost, comments: List<NexusComment>, draft: 
 }
 
 @Composable
-private fun EditProfileDialog(name: String, bio: String, onName: (String) -> Unit, onBio: (String) -> Unit, onDismiss: () -> Unit, onSave: () -> Unit, busy: Boolean) {
+private fun EditProfileDialog(username: String, name: String, bio: String, onUsername: (String) -> Unit, onName: (String) -> Unit, onBio: (String) -> Unit, onDismiss: () -> Unit, onSave: () -> Unit, busy: Boolean) {
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Edit profile") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedTextField(username, onUsername, label = { Text("Username") }, singleLine = true)
             OutlinedTextField(name, onName, label = { Text("Full name") }, singleLine = true)
             OutlinedTextField(bio, onBio, label = { Text("Bio") }, minLines = 2, maxLines = 4)
         }
-    }, confirmButton = { TextButton(onClick = onSave, enabled = !busy) { Text(if (busy) "Saving…" else "Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+    }, confirmButton = { TextButton(onClick = onSave, enabled = !busy && username.length >= 3) { Text(if (busy) "Saving…" else "Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+}
+@Composable
+private fun AccountSecurityDialog(devices: List<NexusDevice>, currentUser: String, password: String, onPassword: (String) -> Unit, onDismiss: () -> Unit, onRevoke: (String) -> Unit, onUpdatePassword: () -> Unit, busy: Boolean) {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Account security") }, text = {
+        Column(Modifier.heightIn(max = 430.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text("Logged-in devices", fontWeight = FontWeight.Bold)
+            if (devices.isEmpty()) Text("No device records yet.", color = Color.Gray)
+            devices.forEach { device ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(device.name, fontWeight = FontWeight.SemiBold)
+                        Text(device.platform + " · " + device.lastSeen.take(16).replace("T", " "), fontSize = 11.sp, color = Color.Gray)
+                        if (device.deviceId == currentUser) Text("Current device", color = Blue, fontSize = 11.sp)
+                    }
+                    if (device.deviceId != currentUser) TextButton(onClick = { onRevoke(device.id) }) { Text("Sign out") }
+                }
+                HorizontalDivider(color = Soft)
+            }
+            Text("Change password", fontWeight = FontWeight.Bold)
+            OutlinedTextField(password, onPassword, label = { Text("New password") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+            Button(onClick = onUpdatePassword, enabled = !busy && password.length >= 8) { Text("Update password") }
+        }
+    }, confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } })
 }
