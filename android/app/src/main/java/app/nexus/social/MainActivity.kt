@@ -55,6 +55,10 @@ private fun NexusApp(api: NexusApi) {
     var signedIn by remember { mutableStateOf(api.isSignedIn) }
     var profile by remember { mutableStateOf<NexusProfile?>(null) }
     var feed by remember { mutableStateOf(emptyList<NexusPost>()) }
+    var stories by remember { mutableStateOf(emptyList<NexusStory>()) }
+    var activeStory by remember { mutableStateOf<NexusStory?>(null) }
+    var createStoryOpen by remember { mutableStateOf(false) }
+    var selectedStoryUri by remember { mutableStateOf<Uri?>(null) }
     var savedPosts by remember { mutableStateOf(emptyList<NexusPost>()) }
     var savedIds by remember { mutableStateOf(setOf<String>()) }
     var followerCount by remember { mutableStateOf(0) }
@@ -82,6 +86,7 @@ private fun NexusApp(api: NexusApi) {
     var editBio by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { selectedImage = it }
+    val storyPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { selectedStoryUri = it }
 
     fun report(t: Throwable) { error = t.message ?: "Something went wrong." }
     fun refreshFeed() {
@@ -122,6 +127,7 @@ private fun NexusApp(api: NexusApi) {
                 feed = api.feed()
                 savedPosts = api.savedPosts()
                 savedIds = savedPosts.map { it.id }.toSet()
+                stories = api.stories()
             } catch (t: Throwable) { report(t) }
         } else { profile = null; feed = emptyList() }
     }
@@ -175,7 +181,7 @@ private fun NexusApp(api: NexusApi) {
                         savedIds = if (already) savedIds - post.id else savedIds + post.id
                         savedPosts = if (already) savedPosts.filterNot { it.id == post.id } else savedPosts + post
                         scope.launch { try { api.toggleSaved(post.id, already) } catch (t: Throwable) { report(t) } }
-                    }, savedIds = savedIds, modifier = Modifier.padding(padding))
+                    }, savedIds = savedIds, modifier = Modifier.padding(padding), stories = stories, onCreateStory = { selectedStoryUri = null; createStoryOpen = true }, onOpenStory = { activeStory = it })
                     "Explore" -> ExploreScreen(query, people, onQuery = { value ->
                         query = value
                         scope.launch { try { people = if (value.isBlank()) emptyList() else api.searchPeople(value) } catch (t: Throwable) { report(t) } }
@@ -239,6 +245,24 @@ private fun NexusApp(api: NexusApi) {
                     }
                 }, busy
             )
+            if (createStoryOpen) CreateStoryDialog(
+                selectedStoryUri, { storyPicker.launch("*/*") }, { createStoryOpen = false; selectedStoryUri = null }, { 
+                    val uri = selectedStoryUri
+                    if (uri != null) scope.launch {
+                        busy = true
+                        try {
+                            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw IllegalStateException("Unable to read selected media.")
+                            val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+                            val extension = when { mime.contains("png") -> "png"; mime.contains("webp") -> "webp"; mime.startsWith("video/") -> "mp4"; else -> "jpg" }
+                            api.publishStory(bytes, mime, extension)
+                            stories = api.stories()
+                            createStoryOpen = false; selectedStoryUri = null
+                        } catch (t: Throwable) { report(t) }
+                        busy = false
+                    }
+                }, busy
+            )
+            if (activeStory != null) StoryViewerDialog(activeStory!!, { activeStory = null })
             if (commentsPost != null) CommentDialog(
                 commentsPost!!, comments, commentDraft, { commentDraft = it }, { commentsPost = null },
                 {
@@ -301,12 +325,12 @@ private fun AuthScreen(api: NexusApi, onSignedIn: () -> Unit, onError: (String) 
 }
 
 @Composable
-private fun FeedScreen(posts: List<NexusPost>, currentUser: String, loading: Boolean, onRefresh: () -> Unit, onLike: (NexusPost) -> Unit, onComment: (NexusPost) -> Unit, onProfile: (NexusProfile) -> Unit, onSave: (NexusPost) -> Unit, savedIds: Set<String>, modifier: Modifier = Modifier) {
+private fun FeedScreen(posts: List<NexusPost>, currentUser: String, loading: Boolean, onRefresh: () -> Unit, onLike: (NexusPost) -> Unit, onComment: (NexusPost) -> Unit, onProfile: (NexusProfile) -> Unit, onSave: (NexusPost) -> Unit, savedIds: Set<String>, modifier: Modifier = Modifier, stories: List<NexusStory> = emptyList(), onCreateStory: () -> Unit = {}, onOpenStory: (NexusStory) -> Unit = {}) {
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 12.dp)) {
         item {
             LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-                item { StoryBubble("Your story", null) }
-                items(posts.distinctBy { it.userId }.filter { it.userId != currentUser }.take(12)) { StoryBubble(it.username, it.avatarUrl) }
+                item { StoryBubble("Your story", null, onCreateStory) }
+                items(stories.distinctBy { it.userId }.filter { it.userId != currentUser }) { story -> StoryBubble(story.username, story.avatarUrl) { onOpenStory(story) } }
             }
             HorizontalDivider(color = Color(0xFFEFEFEF))
         }
@@ -324,8 +348,8 @@ private fun FeedScreen(posts: List<NexusPost>, currentUser: String, loading: Boo
 }
 
 @Composable
-private fun StoryBubble(name: String, avatar: String?) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(64.dp)) {
+private fun StoryBubble(name: String, avatar: String?, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(64.dp).clickable(onClick = onClick)) {
         Box(Modifier.size(62.dp).clip(CircleShape).background(Color(0xFFE65A8D)), contentAlignment = Alignment.Center) {
             if (avatar.isNullOrBlank()) Box(Modifier.size(56.dp).clip(CircleShape).background(Color(0xFFEEEEEE)), contentAlignment = Alignment.Center) { Text("+", fontSize = 28.sp, color = Ink) }
             else AsyncImage(avatar, null, Modifier.size(56.dp).clip(CircleShape), contentScale = ContentScale.Crop)
@@ -486,6 +510,49 @@ private fun CreatePostDialog(imageUri: Uri?, onPick: () -> Unit, onDismiss: () -
         } },
         confirmButton = { TextButton(onClick = { onPublish(caption, location) }, enabled = !busy && (caption.isNotBlank() || imageUri != null)) { Text(if (busy) "Sharing…" else "Share") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun CreateStoryDialog(uri: Uri?, onPick: () -> Unit, onDismiss: () -> Unit, onPublish: () -> Unit, busy: Boolean) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to your story") },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (uri == null) {
+                    OutlinedButton(onClick = onPick, modifier = Modifier.fillMaxWidth().height(110.dp)) {
+                        Icon(Icons.Default.AddPhotoAlternate, null); Spacer(Modifier.width(8.dp)); Text("Choose photo or video")
+                    }
+                } else {
+                    AsyncImage(uri, null, Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                }
+                Text("Stories disappear after 24 hours.", color = Color.Gray, fontSize = 12.sp)
+            }
+        },
+        confirmButton = { TextButton(onClick = onPublish, enabled = uri != null && !busy) { Text(if (busy) "Sharing…" else "Share story") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun StoryViewerDialog(story: NexusStory, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        title = { Text(story.username) },
+        text = {
+            if (story.mediaType == "video") {
+                AndroidView(factory = { viewContext ->
+                    VideoView(viewContext).apply {
+                        setVideoURI(Uri.parse(story.mediaUrl))
+                        setOnPreparedListener { player -> player.isLooping = true; start() }
+                    }
+                }, modifier = Modifier.fillMaxWidth().height(420.dp))
+            } else {
+                AsyncImage(story.mediaUrl, null, Modifier.fillMaxWidth().heightIn(max = 520.dp), contentScale = ContentScale.Fit)
+            }
+        }
     )
 }
 
