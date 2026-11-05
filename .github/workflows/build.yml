@@ -14,6 +14,10 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  SUPABASE_URL: https://cjzajjvumfjamxxwnaea.supabase.co
+  SUPABASE_ANON_KEY: sb_publishable_k2shQkpp96DwuNhQdhHy1g_iiWot165
+
 jobs:
   web:
     name: Web production build
@@ -31,8 +35,8 @@ jobs:
       - name: Build
         working-directory: web
         env:
-          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
         run: npm run build
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'
@@ -77,9 +81,6 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Build debug APK
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: gradle -p android :app:assembleDebug -PSUPABASE_URL="$SUPABASE_URL" -PSUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
       - uses: actions/upload-artifact@v4
         with:
