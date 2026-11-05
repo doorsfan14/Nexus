@@ -475,6 +475,7 @@ private fun ProfileScreen(person: NexusProfile, posts: List<NexusPost>, isOwn: B
                 Spacer(Modifier.height(14.dp))
                 if (isOwn) {
                     OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) { Text("Edit profile") }
+                    OutlinedButton(onClick = onSecurity, modifier = Modifier.fillMaxWidth()) { Text("Password & logged-in devices") }
                     TextButton(onClick = onSaved, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.BookmarkBorder, null); Spacer(Modifier.width(7.dp)); Text("Saved posts") }
                 }
                 else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
