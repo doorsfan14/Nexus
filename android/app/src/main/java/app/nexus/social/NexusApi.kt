@@ -220,7 +220,6 @@ class NexusApi(context: Context) {
         request("PATCH", "/rest/v1/notifications?recipient_id=eq." + encode(userId) + "&is_read=eq.false", JSONObject().put("is_read", true), prefer = "return=minimal")
         return values
     }
-}
 
     suspend fun postsForUser(profileId: String): List<NexusPost> {
         val rows = JSONArray(request("GET", "/rest/v1/posts?select=id,user_id,caption,location,created_at,profiles!posts_user_id_fkey(id,username,avatar_url),post_media(id,media_url,media_type),post_likes(user_id),comments(count)&user_id=eq." + encode(profileId) + "&order=created_at.desc"))
@@ -266,4 +265,4 @@ class NexusApi(context: Context) {
             throw e
         }
     }
-
+}
