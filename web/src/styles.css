@@ -44,3 +44,24 @@
   .composer-form{padding:12px}
   .upload-area{min-height:180px}
 }
+
+
+/* Account settings */
+.settings-page{max-width:680px;margin:0 auto}
+.settings-page>h1{font-size:25px;margin:8px 0 26px}
+.settings-page form{display:grid;gap:14px}
+.settings-page label{display:grid;gap:7px;font-size:13px;font-weight:600;color:#333}
+.settings-page input,.settings-page textarea{width:100%;border:1px solid #dbdbdb;border-radius:8px;padding:12px;font:inherit;font-weight:400;min-width:0;background:#fff}
+.settings-page textarea{min-height:92px;resize:vertical}
+.settings-page .primary-button,.settings-page .secondary-button{min-height:42px}
+.settings-section{border-top:1px solid #eee;margin-top:28px;padding-top:22px}
+.settings-section h2{font-size:18px;margin:0 0 8px}
+.settings-section>p{font-size:13px;color:#777;margin:0 0 14px}
+.device-list{display:grid;margin-top:14px}
+.device-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid #eee}
+.device-row>div{display:grid;gap:5px;min-width:0}
+.device-row strong{font-size:14px}
+.device-row small{font-size:11px;color:#888;overflow-wrap:anywhere}
+.device-row>span{font-size:12px;color:#16834a;font-weight:700}
+.settings-page .auth-switch button{margin-left:8px}
+@media(max-width:680px){.settings-page{padding:18px 16px 30px}.settings-page>h1{font-size:22px}.device-row{align-items:flex-start}.device-row .secondary-button{white-space:nowrap;padding:8px 10px}}
