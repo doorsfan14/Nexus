@@ -149,29 +149,36 @@ private fun NexusApp(api: NexusApi) {
             Scaffold(
                 containerColor = Color.White,
                 topBar = {
-                    Row(Modifier.fillMaxWidth().height(54.dp).background(Color.White).padding(horizontal = 15.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("nexus", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.6).sp, color = Ink, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { screen = "Notifications" }) { Icon(Icons.Default.FavoriteBorder, "Notifications", tint = Ink) }
-                        IconButton(onClick = { screen = "Messages"; activeConversation = null }) { Icon(Icons.Default.Send, "Messages", tint = Ink) }
+                    Box(Modifier.fillMaxWidth().height(54.dp).background(Color.White)) {
+                        Row(Modifier.widthIn(max = 700.dp).fillMaxWidth().align(Alignment.Center).padding(horizontal = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("nexus", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.6).sp, color = Ink, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { screen = "Notifications" }) { Icon(Icons.Default.FavoriteBorder, "Notifications", tint = Ink) }
+                            IconButton(onClick = { screen = "Messages"; activeConversation = null }) { Icon(Icons.Default.Send, "Messages", tint = Ink) }
+                        }
                     }
                 },
                 bottomBar = {
-                    NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
-                        val items = listOf(Icons.Default.Home to "Home", Icons.Default.Search to "Explore", Icons.Default.AddBox to "Create", Icons.Default.FavoriteBorder to "Notifications", Icons.Default.PersonOutline to "Profile")
-                        items.forEach { pair ->
-                            val icon = pair.first
-                            val label = pair.second
-                            NavigationBarItem(
-                                selected = screen == label,
-                                onClick = { if (label == "Create") createOpen = true else { screen = label; viewedProfile = null; activeConversation = null } },
-                                icon = { Icon(icon, label) }, label = null,
-                                colors = NavigationBarItemDefaults.colors(selectedIconColor = Ink, unselectedIconColor = Ink, indicatorColor = Color.Transparent)
-                            )
+                    Box(Modifier.fillMaxWidth().background(Color.White)) {
+                        NavigationBar(Modifier.widthIn(max = 700.dp).fillMaxWidth().align(Alignment.Center), containerColor = Color.White, tonalElevation = 0.dp) {
+                            val items = listOf(Icons.Default.Home to "Home", Icons.Default.Search to "Explore", Icons.Default.AddBox to "Create", Icons.Default.FavoriteBorder to "Notifications", Icons.Default.PersonOutline to "Profile")
+                            items.forEach { pair ->
+                                val icon = pair.first
+                                val label = pair.second
+                                NavigationBarItem(
+                                    selected = screen == label,
+                                    onClick = { if (label == "Create") createOpen = true else { screen = label; viewedProfile = null; activeConversation = null } },
+                                    icon = { Icon(icon, label) }, label = null,
+                                    colors = NavigationBarItemDefaults.colors(selectedIconColor = Ink, unselectedIconColor = Ink, indicatorColor = Color.Transparent)
+                                )
+                            }
                         }
                     }
                 }
             ) { padding ->
-                when (screen) {
+                BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
+                    val contentMaxWidth = if (maxWidth >= 600.dp) 700.dp else maxWidth
+                    Box(Modifier.widthIn(max = contentMaxWidth).fillMaxSize().align(Alignment.TopCenter)) {
+                        when (screen) {
                     "Home" -> FeedScreen(feed, api.userId, loading, onRefresh = { refreshFeed() }, onLike = { post ->
                         val liked = post.likes.contains(api.userId)
                         feed = feed.map { if (it.id == post.id) it.copy(likes = if (liked) it.likes - api.userId else it.likes + api.userId) else it }
@@ -181,11 +188,11 @@ private fun NexusApp(api: NexusApi) {
                         savedIds = if (already) savedIds - post.id else savedIds + post.id
                         savedPosts = if (already) savedPosts.filterNot { it.id == post.id } else savedPosts + post
                         scope.launch { try { api.toggleSaved(post.id, already) } catch (t: Throwable) { report(t) } }
-                    }, savedIds = savedIds, modifier = Modifier.padding(padding), stories = stories, onCreateStory = { selectedStoryUri = null; createStoryOpen = true }, onOpenStory = { activeStory = it })
+                    }, savedIds = savedIds, modifier = Modifier.fillMaxSize(), stories = stories, onCreateStory = { selectedStoryUri = null; createStoryOpen = true }, onOpenStory = { activeStory = it })
                     "Explore" -> ExploreScreen(query, people, onQuery = { value ->
                         query = value
                         scope.launch { try { people = if (value.isBlank()) emptyList() else api.searchPeople(value) } catch (t: Throwable) { report(t) } }
-                    }, onProfile = { openProfile(it) }, modifier = Modifier.padding(padding))
+                    }, onProfile = { openProfile(it) }, modifier = Modifier.fillMaxSize())
                     "Messages" -> MessagesScreen(
                         conversations, activeConversation, messages, api.userId, messageDraft, { messageDraft = it },
                         { openConversation(it) }, { activeConversation = null },
@@ -195,9 +202,9 @@ private fun NexusApp(api: NexusApi) {
                                 val body = messageDraft.trim(); messageDraft = ""
                                 scope.launch { try { api.sendMessage(active.id, body); messages = api.messages(active.id) } catch (t: Throwable) { report(t) } }
                             }
-                        }, Modifier.padding(padding)
+                        }, Modifier.fillMaxSize()
                     )
-                    "Notifications" -> SimpleListScreen("Notifications", notifications, Modifier.padding(padding))
+                    "Notifications" -> SimpleListScreen("Notifications", notifications, Modifier.fillMaxSize())
                     "Saved" -> FeedScreen(savedPosts, api.userId, false, onRefresh = {
                         scope.launch { try { savedPosts = api.savedPosts(); savedIds = savedPosts.map { it.id }.toSet() } catch (t: Throwable) { report(t) } }
                     }, onLike = { post ->
@@ -209,7 +216,7 @@ private fun NexusApp(api: NexusApi) {
                         savedIds = if (already) savedIds - post.id else savedIds + post.id
                         savedPosts = if (already) savedPosts.filterNot { it.id == post.id } else savedPosts + post
                         scope.launch { try { api.toggleSaved(post.id, already) } catch (t: Throwable) { report(t) } }
-                    }, savedIds = savedIds, modifier = Modifier.padding(padding))
+                    }, savedIds = savedIds, modifier = Modifier.fillMaxSize())
                     "Profile" -> {
                         val person = viewedProfile ?: profile
                         if (person != null) ProfileScreen(
@@ -223,10 +230,12 @@ private fun NexusApp(api: NexusApi) {
                                     conversations = listOf(conv) + conversations.filterNot { it.id == id }
                                     screen = "Messages"; openConversation(conv)
                                 } catch (t: Throwable) { report(t) } }
-                            }, { openComments(it) }, Modifier.padding(padding)
+                            }, { openComments(it) }, Modifier.fillMaxSize()
                         )
                     }
-                    else -> SimpleListScreen(screen, emptyList(), Modifier.padding(padding))
+                    else -> SimpleListScreen(screen, emptyList(), Modifier.fillMaxSize())
+                        }
+                    }
                 }
             }
             if (createOpen) CreatePostDialog(
