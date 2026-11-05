@@ -143,7 +143,8 @@ class NexusApi(context: Context) {
             .putString("user_id", user.optString("id")).apply()
     }
     suspend fun signOut() {
-        try { request("POST", "/auth/v1/logout") } finally { prefs.edit().clear().apply() }
+        try { request("DELETE", "/rest/v1/device_sessions?user_id=eq." + encode(userId) + "&device_id=eq." + encode(deviceId), prefer = "return=minimal") } catch (_: Exception) {}
+        try { request("POST", "/auth/v1/logout") } finally { prefs.edit().remove("access_token").remove("refresh_token").remove("user_id").apply() }
     }
     suspend fun profile(): NexusProfile? {
         val rows = JSONArray(request("GET", "/rest/v1/profiles?id=eq." + encode(userId) + "&select=*"))
