@@ -39,8 +39,9 @@ create table if not exists public.saved_posts (
 );
 create table if not exists public.stories (
   id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles(id) on delete cascade,
-  storage_path text not null, media_url text not null, created_at timestamptz not null default now(),
-  expires_at timestamptz not null default now() + interval '24 hours'
+  storage_path text not null, media_url text not null,
+  media_type text not null default 'image' check(media_type in ('image','video')),
+  created_at timestamptz not null default now(), expires_at timestamptz not null default now() + interval '24 hours'
 );
 create table if not exists public.conversations (
   id uuid primary key default gen_random_uuid(), created_at timestamptz not null default now(), updated_at timestamptz not null default now()
