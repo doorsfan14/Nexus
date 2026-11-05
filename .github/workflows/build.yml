@@ -17,6 +17,8 @@ concurrency:
 env:
   SUPABASE_URL: https://cjzajjvumfjamxxwnaea.supabase.co
   SUPABASE_ANON_KEY: sb_publishable_k2shQkpp96DwuNhQdhHy1g_iiWot165
+  VITE_SUPABASE_URL: https://cjzajjvumfjamxxwnaea.supabase.co
+  VITE_SUPABASE_ANON_KEY: sb_publishable_k2shQkpp96DwuNhQdhHy1g_iiWot165
 
 jobs:
   web:
@@ -34,9 +36,6 @@ jobs:
         run: npm install
       - name: Build
         working-directory: web
-        env:
-          VITE_SUPABASE_URL: ${{ env.SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
         run: npm run build
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'
