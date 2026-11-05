@@ -51,7 +51,8 @@ data class NexusComment(val id: String, val username: String, val avatarUrl: Str
 }
 data class NexusConversation(val id: String, val username: String, val avatarUrl: String)
 data class NexusMessage(val id: String, val senderId: String, val body: String)
-data class NexusDevice(val id: String, val deviceId: String, val name: String, val platform: String, val lastSeen: String, val revoked: Boolean)\ndata class NexusStory(val id: String, val userId: String, val username: String, val avatarUrl: String, val mediaUrl: String, val mediaType: String) {
+data class NexusDevice(val id: String, val deviceId: String, val name: String, val platform: String, val lastSeen: String, val revoked: Boolean)
+data class NexusStory(val id: String, val userId: String, val username: String, val avatarUrl: String, val mediaUrl: String, val mediaType: String) {
     companion object {
         fun from(json: JSONObject): NexusStory {
             val p = json.optJSONObject("profiles") ?: JSONObject()
@@ -148,8 +149,30 @@ class NexusApi(context: Context) {
         val rows = JSONArray(request("GET", "/rest/v1/profiles?id=eq." + encode(userId) + "&select=*"))
         return if (rows.length() == 0) null else NexusProfile.from(rows.getJSONObject(0))
     }
-    suspend fun updateProfile(fullName: String, bio: String) {
-        request("PATCH", "/rest/v1/profiles?id=eq." + encode(userId), JSONObject().put("full_name", fullName).put("bio", bio), prefer = "return=minimal")
+    suspend fun updateProfile(username: String, fullName: String, bio: String) {
+        request("PATCH", "/rest/v1/profiles?id=eq." + encode(userId), JSONObject().put("username", username).put("full_name", fullName).put("bio", bio), prefer = "return=minimal")
+    }
+    suspend fun requestPasswordReset(email: String) { request("POST", "/auth/v1/recover", JSONObject().put("email", email), useSession = false) }
+    suspend fun updatePassword(password: String) { request("PUT", "/auth/v1/user", JSONObject().put("password", password)) }
+    private val deviceId: String get() {
+        var id = prefs.getString("device_id", null)
+        if (id.isNullOrBlank()) { id = java.util.UUID.randomUUID().toString(); prefs.edit().putString("device_id", id).apply() }
+        return id
+    }
+    suspend fun registerDevice() {
+        request("POST", "/rest/v1/device_sessions?on_conflict=user_id,device_id",
+            JSONObject().put("user_id", userId).put("device_id", deviceId).put("device_name", android.os.Build.MODEL.ifBlank { "Android device" })
+                .put("platform", "Android").put("last_seen", java.time.Instant.now().toString()).put("revoked_at", JSONObject.NULL),
+            prefer = "resolution=merge-duplicates,return=minimal")
+    }
+    suspend fun deviceSessions(): List<NexusDevice> {
+        val rows = JSONArray(request("GET", "/rest/v1/device_sessions?select=id,device_id,device_name,platform,last_seen,revoked_at&user_id=eq." + encode(userId) + "&order=last_seen.desc"))
+        return (0 until rows.length()).map { val row = rows.getJSONObject(it); NexusDevice(row.optString("id"), row.optString("device_id"), row.optString("device_name"), row.optString("platform"), row.optString("last_seen"), !row.isNull("revoked_at")) }
+    }
+    suspend fun revokeDevice(id: String) { request("PATCH", "/rest/v1/device_sessions?id=eq." + encode(id), JSONObject().put("revoked_at", java.time.Instant.now().toString()), prefer = "return=minimal") }
+    suspend fun isDeviceRevoked(): Boolean {
+        val rows = JSONArray(request("GET", "/rest/v1/device_sessions?select=revoked_at&user_id=eq." + encode(userId) + "&device_id=eq." + encode(deviceId)))
+        return rows.length() > 0 && !rows.getJSONObject(0).isNull("revoked_at")
     }
     suspend fun feed(): List<NexusPost> {
         val rows = JSONArray(request("GET", "/rest/v1/posts?select=id,user_id,caption,location,created_at,profiles!posts_user_id_fkey(id,username,avatar_url),post_media(id,media_url,media_type),post_likes(user_id),comments(count)&order=created_at.desc&limit=50"))
