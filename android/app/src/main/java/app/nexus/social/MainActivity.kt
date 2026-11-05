@@ -139,7 +139,7 @@ private fun NexusApp(api: NexusApi) {
 
     MaterialTheme(
         colorScheme = lightColorScheme(primary = Blue, onPrimary = Color.White, background = Color.White, surface = Color.White),
-        typography = Typography(defaultFontFamily = FontFamily.SansSerif)
+        typography = Typography()
     ) {
         if (!api.isConfigured) {
             ConfigurationScreen()
