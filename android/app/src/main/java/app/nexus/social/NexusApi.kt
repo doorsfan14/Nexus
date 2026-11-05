@@ -51,6 +51,15 @@ data class NexusComment(val id: String, val username: String, val avatarUrl: Str
 }
 data class NexusConversation(val id: String, val username: String, val avatarUrl: String)
 data class NexusMessage(val id: String, val senderId: String, val body: String)
+data class NexusStory(val id: String, val userId: String, val username: String, val avatarUrl: String, val mediaUrl: String, val mediaType: String) {
+    companion object {
+        fun from(json: JSONObject): NexusStory {
+            val p = json.optJSONObject("profiles") ?: JSONObject()
+            return NexusStory(json.optString("id"), json.optString("user_id"), p.optString("username", "user"),
+                p.optString("avatar_url"), json.optString("media_url"), json.optString("media_type", "image"))
+        }
+    }
+}
 
 class NexusApi(context: Context) {
     private val prefs = context.getSharedPreferences("nexus_auth", Context.MODE_PRIVATE)
@@ -238,5 +247,23 @@ class NexusApi(context: Context) {
             result.add(NexusPost.from(post))
         }
         return result
+    }
+
+    suspend fun stories(): List<NexusStory> {
+        val rows = JSONArray(request("GET", "/rest/v1/stories?select=id,user_id,media_url,media_type,profiles!stories_user_id_fkey(id,username,avatar_url)&expires_at=gt." + encode(java.time.Instant.now().toString()) + "&order=created_at.asc&limit=100"))
+        return (0 until rows.length()).map { NexusStory.from(rows.getJSONObject(it)) }
+    }
+    suspend fun publishStory(media: ByteArray, mimeType: String, extension: String) {
+        if (!mimeType.startsWith("image/") && !mimeType.startsWith("video/")) throw IOException("Choose an image or video.")
+        val path = userId + "/" + java.util.UUID.randomUUID().toString() + "." + extension
+        request("POST", "/storage/v1/object/post-media/" + path, bytes = media, mimeType = mimeType)
+        val url = baseUrl + "/storage/v1/object/public/post-media/" + path
+        try {
+            request("POST", "/rest/v1/stories", JSONObject().put("user_id", userId).put("storage_path", path)
+                .put("media_url", url).put("media_type", if (mimeType.startsWith("video/")) "video" else "image"), prefer = "return=minimal")
+        } catch (e: Exception) {
+            try { request("DELETE", "/storage/v1/object/post-media/" + path) } catch (_: Exception) {}
+            throw e
+        }
     }
 
