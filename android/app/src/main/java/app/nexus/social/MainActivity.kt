@@ -331,6 +331,15 @@ private fun AuthScreen(api: NexusApi, onSignedIn: () -> Unit, onError: (String) 
             Text(if (busy) "Please wait…" else if (signup) "Create account" else "Log in", fontWeight = FontWeight.Bold)
         }
         TextButton(onClick = { signup = !signup; message = "" }) { Text(if (signup) "Already have an account? Log in" else "Don't have an account? Sign up") }
+        if (!signup) TextButton(onClick = {
+            scope.launch {
+                if (!email.contains("@")) { message = "Enter your email address first."; return@launch }
+                busy = true
+                try { api.requestPasswordReset(email.trim()); message = "Password reset email sent." }
+                catch (t: Throwable) { message = t.message ?: "Could not send reset email." }
+                busy = false
+            }
+        }, enabled = !busy) { Text("Forgot password?") }
     }
 }
 
@@ -591,7 +600,7 @@ private fun EditProfileDialog(username: String, name: String, bio: String, onUse
     }, confirmButton = { TextButton(onClick = onSave, enabled = !busy && username.length >= 3) { Text(if (busy) "Saving…" else "Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }
 @Composable
-private fun AccountSecurityDialog(devices: List<NexusDevice>, currentUser: String, password: String, onPassword: (String) -> Unit, onDismiss: () -> Unit, onRevoke: (String) -> Unit, onUpdatePassword: () -> Unit, busy: Boolean) {
+private fun AccountSecurityDialog(devices: List<NexusDevice>, currentDeviceId: String, password: String, onPassword: (String) -> Unit, onDismiss: () -> Unit, onRevoke: (String) -> Unit, onUpdatePassword: () -> Unit, busy: Boolean) {
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Account security") }, text = {
         Column(Modifier.heightIn(max = 430.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Text("Logged-in devices", fontWeight = FontWeight.Bold)
@@ -601,9 +610,9 @@ private fun AccountSecurityDialog(devices: List<NexusDevice>, currentUser: Strin
                     Column(Modifier.weight(1f)) {
                         Text(device.name, fontWeight = FontWeight.SemiBold)
                         Text(device.platform + " · " + device.lastSeen.take(16).replace("T", " "), fontSize = 11.sp, color = Color.Gray)
-                        if (device.deviceId == currentUser) Text("Current device", color = Blue, fontSize = 11.sp)
+                        if (device.deviceId == currentDeviceId) Text("Current device", color = Blue, fontSize = 11.sp)
                     }
-                    if (device.deviceId != currentUser) TextButton(onClick = { onRevoke(device.id) }) { Text("Sign out") }
+                    if (device.deviceId != currentDeviceId) TextButton(onClick = { onRevoke(device.id) }) { Text("Sign out") }
                 }
                 HorizontalDivider(color = Soft)
             }
