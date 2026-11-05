@@ -144,12 +144,6 @@ private fun NexusApp(api: NexusApi) {
             try { if (api.isDeviceRevoked()) { api.signOut(); signedIn = false } else api.registerDevice() } catch (_: Throwable) {}
         }
     }
-    LaunchedEffect(signedIn) {
-        while (signedIn) {
-            delay(30000)
-            try { if (api.isDeviceRevoked()) { api.signOut(); signedIn = false } else api.registerDevice() } catch (_: Throwable) {}
-        }
-    }
     LaunchedEffect(screen, signedIn) {
         if (!signedIn) return@LaunchedEffect
         if (screen == "Messages") try { conversations = api.conversations() } catch (t: Throwable) { report(t) }
