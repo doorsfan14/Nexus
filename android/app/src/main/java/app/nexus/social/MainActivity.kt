@@ -34,7 +34,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import android.widget.VideoView
 import coil.compose.AsyncImage
-import kotlinx.coroutines.launch\nimport kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 private val Ink = Color(0xFF171717)
@@ -82,7 +83,11 @@ private fun NexusApp(api: NexusApi) {
     var messageDraft by remember { mutableStateOf("") }
     var notifications by remember { mutableStateOf(emptyList<String>()) }
     var profileEditOpen by remember { mutableStateOf(false) }
-    var editName by remember { mutableStateOf("") }\n    var editUsername by remember { mutableStateOf("") }\n    var deviceRows by remember { mutableStateOf(emptyList<NexusDevice>()) }\n    var securityOpen by remember { mutableStateOf(false) }\n    var newPassword by remember { mutableStateOf("") }
+    var editName by remember { mutableStateOf("") }
+    var editUsername by remember { mutableStateOf("") }
+    var deviceRows by remember { mutableStateOf(emptyList<NexusDevice>()) }
+    var securityOpen by remember { mutableStateOf(false) }
+    var newPassword by remember { mutableStateOf("") }
     var editBio by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { selectedImage = it }
@@ -123,6 +128,8 @@ private fun NexusApp(api: NexusApi) {
             try {
                 profile = api.profile()
                 editName = profile?.fullName.orEmpty()
+                editUsername = profile?.username.orEmpty()
+                api.registerDevice()
                 editBio = profile?.bio.orEmpty()
                 feed = api.feed()
                 savedPosts = api.savedPosts()
@@ -131,7 +138,19 @@ private fun NexusApp(api: NexusApi) {
             } catch (t: Throwable) { report(t) }
         } else { profile = null; feed = emptyList() }
     }
-    LaunchedEffect(signedIn) {\n        while (signedIn) {\n            delay(30000)\n            try { if (api.isDeviceRevoked()) { api.signOut(); signedIn = false } else api.registerDevice() } catch (_: Throwable) {}\n        }\n    }\n    LaunchedEffect(screen, signedIn) {
+    LaunchedEffect(signedIn) {
+        while (signedIn) {
+            delay(30000)
+            try { if (api.isDeviceRevoked()) { api.signOut(); signedIn = false } else api.registerDevice() } catch (_: Throwable) {}
+        }
+    }
+    LaunchedEffect(signedIn) {
+        while (signedIn) {
+            delay(30000)
+            try { if (api.isDeviceRevoked()) { api.signOut(); signedIn = false } else api.registerDevice() } catch (_: Throwable) {}
+        }
+    }
+    LaunchedEffect(screen, signedIn) {
         if (!signedIn) return@LaunchedEffect
         if (screen == "Messages") try { conversations = api.conversations() } catch (t: Throwable) { report(t) }
         if (screen == "Notifications") try { notifications = api.notifications() } catch (t: Throwable) { report(t) }
@@ -283,8 +302,13 @@ private fun NexusApp(api: NexusApi) {
                     }
                 }
             )
-            if (profileEditOpen) EditProfileDialog(editName, editBio, { editName = it }, { editBio = it }, { profileEditOpen = false }, {
-                scope.launch { try { busy = true; api.updateProfile(editName, editBio); profile = api.profile(); profileEditOpen = false } catch (t: Throwable) { report(t) } finally { busy = false } }
+            if (profileEditOpen) EditProfileDialog(editUsername, editName, editBio, { editUsername = it }, { editName = it }, { editBio = it }, { profileEditOpen = false }, {
+                scope.launch { try { busy = true; api.updateProfile(editUsername.trim().lowercase(Locale.US), editName, editBio); profile = api.profile(); profileEditOpen = false } catch (t: Throwable) { report(t) } finally { busy = false } }
+            }, busy)
+            if (securityOpen) AccountSecurityDialog(deviceRows, api.currentDeviceId, newPassword, { newPassword = it }, { securityOpen = false }, { id ->
+                scope.launch { try { api.revokeDevice(id); deviceRows = api.deviceSessions() } catch (t: Throwable) { report(t) } }
+            }, {
+                scope.launch { try { busy = true; api.updatePassword(newPassword); newPassword = ""; securityOpen = false } catch (t: Throwable) { report(t) } finally { busy = false } }
             }, busy)
             if (error.isNotBlank()) AlertDialog(onDismissRequest = { error = "" }, title = { Text("Nexus") }, text = { Text(error) }, confirmButton = { TextButton(onClick = { error = "" }) { Text("OK") } })
         }
