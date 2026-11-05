@@ -227,3 +227,30 @@ drop policy if exists "Users upload post media" on storage.objects;
 create policy "Users upload post media" on storage.objects for insert to authenticated with check(bucket_id='post-media' and (storage.foldername(name))[1]=auth.uid()::text);
 drop policy if exists "Users delete own post media" on storage.objects;
 create policy "Users delete own post media" on storage.objects for delete to authenticated using(bucket_id='post-media' and (storage.foldername(name))[1]=auth.uid()::text);
+
+
+-- Avoid recursive RLS evaluation when checking the conversation_members table.
+create or replace function public.is_conversation_member(check_conversation_id uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists(select 1 from public.conversation_members cm where cm.conversation_id = check_conversation_id and cm.user_id = auth.uid());
+$$;
+grant execute on function public.is_conversation_member(uuid) to authenticated;
+
+drop policy if exists "Conversation members view conversations" on public.conversations;
+create policy "Conversation members view conversations" on public.conversations for select using(public.is_conversation_member(id));
+drop policy if exists "Conversation members view members" on public.conversation_members;
+create policy "Conversation members view members" on public.conversation_members for select using(public.is_conversation_member(conversation_id));
+drop policy if exists "Members view messages" on public.messages;
+create policy "Members view messages" on public.messages for select using(public.is_conversation_member(conversation_id));
+drop policy if exists "Members send messages" on public.messages;
+create policy "Members send messages" on public.messages for insert with check(auth.uid() = sender_id and public.is_conversation_member(conversation_id));
+
+create or replace function public.bump_conversation_timestamp()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  update public.conversations set updated_at = now() where id = new.conversation_id;
+  return new;
+end;
+$$;
+drop trigger if exists bump_conversation_after_message on public.messages;
+create trigger bump_conversation_after_message after insert on public.messages for each row execute function public.bump_conversation_timestamp();
