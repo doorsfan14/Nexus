@@ -230,13 +230,14 @@ private fun NexusApp(api: NexusApi) {
                 }
             }
             if (createOpen) CreatePostDialog(
-                selectedImage, { imagePicker.launch("image/*") }, { createOpen = false; selectedImage = null },
+                selectedImage, { imagePicker.launch("*/*") }, { createOpen = false; selectedImage = null },
                 { caption, location ->
                     scope.launch {
                         busy = true
                         try {
                             val bytes = selectedImage?.let { uri -> context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }
                             val mime = selectedImage?.let { context.contentResolver.getType(it) } ?: "image/jpeg"
+                            if (!mime.startsWith("image/") && !mime.startsWith("video/")) throw IllegalArgumentException("Choose an image or video.")
                             val ext = when { mime.contains("png") -> "png"; mime.contains("webp") -> "webp"; mime.contains("gif") -> "gif"; mime.startsWith("video/") -> "mp4"; else -> "jpg" }
                             api.publishPost(caption, location, bytes, mime, ext)
                             createOpen = false; selectedImage = null; refreshFeed()
