@@ -16,13 +16,14 @@ function Avatar({ profile, size = 38 }: { profile?: Partial<Profile> | null; siz
   return <img className="avatar" style={{ width: size, height: size }} src={profile?.avatar_url || fallbackAvatar} alt="" />;
 }
 function AuthScreen() {
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "reset">("login");
   const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [username, setUsername] = useState("");
   const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setError(""); if (!supabase) return; setBusy(true);
     try {
-      if (mode === "signup") {
+      if (mode === "reset") { const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname }); if (error) throw error; setError("Password reset email sent. Open the link, then set your new password in Settings."); }
+      else if (mode === "signup") {
         const { error } = await supabase.auth.signUp({ email, password, options: { data: { username: username.trim().toLowerCase() } } });
         if (error) throw error; setError("Check your email to confirm your account, then sign in."); setMode("login");
       } else { const { error } = await supabase.auth.signInWithPassword({ email, password }); if (error) throw error; }
@@ -33,11 +34,11 @@ function AuthScreen() {
     <form onSubmit={submit} className="auth-form">
       {mode === "signup" && <input required minLength={3} maxLength={24} value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" autoComplete="username"/>}
       <input required type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email address" autoComplete="email"/>
-      <input required minLength={6} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" autoComplete={mode === "login" ? "current-password" : "new-password"}/>
-      <button className="primary-button" disabled={busy || !isSupabaseConfigured}>{busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}</button>
+      {mode !== "reset" && <input required minLength={6} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" autoComplete={mode === "login" ? "current-password" : "new-password"}/>} 
+      <button className="primary-button" disabled={busy || !isSupabaseConfigured}>{busy ? "Please wait…" : mode === "login" ? "Log in" : mode === "signup" ? "Create account" : "Send reset link"}</button>
     </form>
     {error && <p className="form-message">{error}</p>}
-    <div className="auth-switch">{mode === "login" ? "Don't have an account?" : "Already have an account?"} <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}>{mode === "login" ? "Sign up" : "Log in"}</button></div>
+    <div className="auth-switch">{mode === "login" ? <>Don't have an account? <button onClick={() => { setMode("signup"); setError(""); }}>Sign up</button><button onClick={() => { setMode("reset"); setError(""); }}>Forgot password?</button></> : <button onClick={() => { setMode("login"); setError(""); }}>Back to log in</button>}</div>
   </section><footer className="auth-footer">About · Help · Terms · Privacy · © 2026 NEXUS</footer></main>;
 }
 function PostCard({ post, currentUser, onLike, onComment, onProfile, onSave, saved }: { post: Post; currentUser: User; onLike: (post: Post) => void; onComment: (post: Post) => void; onProfile: (profile: Profile) => void; onSave: (post: Post) => void; saved: boolean }) {
@@ -79,7 +80,7 @@ export default function App() {
   const [composerOpen, setComposerOpen] = useState(false); const [caption, setCaption] = useState(""); const [location, setLocation] = useState(""); const [file, setFile] = useState<File | null>(null); const [publishing, setPublishing] = useState(false);
   const [commentPost, setCommentPost] = useState<Post | null>(null); const [comments, setComments] = useState<Comment[]>([]); const [commentText, setCommentText] = useState("");
   const [savedIds, setSavedIds] = useState<string[]>([]); const [conversations, setConversations] = useState<any[]>([]); const [activeConversation, setActiveConversation] = useState<any | null>(null); const [messages, setMessages] = useState<any[]>([]); const [messageText, setMessageText] = useState("");
-  const [notifications, setNotifications] = useState<any[]>([]); const [settingsName, setSettingsName] = useState(""); const [settingsBio, setSettingsBio] = useState(""); const [settingsWebsite, setSettingsWebsite] = useState(""); const [savingProfile, setSavingProfile] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]); const [settingsName, setSettingsName] = useState(""); const [settingsUsername, setSettingsUsername] = useState(""); const [settingsBio, setSettingsBio] = useState(""); const [settingsWebsite, setSettingsWebsite] = useState(""); const [avatarFile, setAvatarFile] = useState<File | null>(null); const [newPassword, setNewPassword] = useState(""); const [sessions, setSessions] = useState<any[]>([]); const [deviceId] = useState(() => { const key = "nexus-device-id"; let id = localStorage.getItem(key); if (!id) { id = crypto.randomUUID(); localStorage.setItem(key, id); } return id; }); const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
     if (!supabase) return;
@@ -91,7 +92,7 @@ export default function App() {
   useEffect(() => {
     if (!supabase || !user) { setProfile(null); return; }
     supabase.from("profiles").select("id,username,full_name,avatar_url,bio,website").eq("id", user.id).maybeSingle()
-      .then(({ data }) => { if (data) { setProfile(data as Profile); setSettingsName(data.full_name || ""); setSettingsBio(data.bio || ""); setSettingsWebsite(data.website || ""); } });
+      .then(({ data }) => { if (data) { setProfile(data as Profile); setSettingsName(data.full_name || ""); setSettingsUsername(data.username || ""); setSettingsBio(data.bio || ""); setSettingsWebsite(data.website || ""); } });
   }, [user?.id]);
   const loadFeed = useCallback(async () => {
     if (!supabase || !user) return; setLoading(true);
@@ -214,9 +215,24 @@ export default function App() {
   };
   const saveProfile = async (event: FormEvent) => {
     event.preventDefault(); if (!supabase || !user) return; setSavingProfile(true);
-    const { error } = await supabase.from("profiles").update({ full_name: settingsName.trim(), bio: settingsBio.trim(), website: settingsWebsite.trim() }).eq("id", user.id);
-    if (error) setNotice(error.message); else setProfile(p => p ? { ...p, full_name: settingsName, bio: settingsBio, website: settingsWebsite } : p); setSavingProfile(false);
+    try {
+      let avatarUrl = profile?.avatar_url || null;
+      if (avatarFile) { const ext = avatarFile.name.split(".").pop() || "jpg"; const path = user.id + "/avatar-" + crypto.randomUUID() + "." + ext; const { error: uploadError } = await supabase.storage.from("post-media").upload(path, avatarFile, { upsert: true, contentType: avatarFile.type }); if (uploadError) throw uploadError; avatarUrl = supabase.storage.from("post-media").getPublicUrl(path).data.publicUrl; }
+      const { error } = await supabase.from("profiles").update({ username: settingsUsername.trim().toLowerCase(), full_name: settingsName.trim(), bio: settingsBio.trim(), website: settingsWebsite.trim() || null, avatar_url: avatarUrl }).eq("id", user.id);
+      if (error) throw error;
+      setProfile(p => p ? { ...p, username: settingsUsername.trim().toLowerCase(), full_name: settingsName, bio: settingsBio, website: settingsWebsite, avatar_url: avatarUrl } : p); setAvatarFile(null); setNotice("Profile updated.");
+    } catch (e) { setNotice(e instanceof Error ? e.message : "Profile could not be saved."); } finally { setSavingProfile(false); }
   };
+  const loadSessions = async () => { if (!supabase || !user) return; const { data, error } = await supabase.from("device_sessions").select("id,device_id,device_name,platform,last_seen,revoked_at").eq("user_id", user.id).order("last_seen", { ascending: false }); if (error) setNotice(error.message); else setSessions(data || []); };
+  useEffect(() => {
+    if (!supabase || !user) return;
+    const ua = navigator.userAgent; const platform = /android/i.test(ua) ? "Android" : /iphone|ipad/i.test(ua) ? "iOS" : /mac/i.test(ua) ? "macOS" : /win/i.test(ua) ? "Windows" : "Browser";
+    const deviceName = /iphone/i.test(ua) ? "iPhone" : /ipad/i.test(ua) ? "iPad" : /android/i.test(ua) ? "Android device" : /mac/i.test(ua) ? "Mac" : /win/i.test(ua) ? "Windows PC" : "Web browser";
+    const register = async () => { await supabase.from("device_sessions").upsert({ user_id: user.id, device_id: deviceId, device_name: deviceName, platform, last_seen: new Date().toISOString(), revoked_at: null }, { onConflict: "user_id,device_id" }); await loadSessions(); };
+    register();
+    const timer = window.setInterval(async () => { const { data } = await supabase.from("device_sessions").select("revoked_at").eq("user_id", user.id).eq("device_id", deviceId).maybeSingle(); if (data?.revoked_at) await supabase.auth.signOut(); else await supabase.from("device_sessions").update({ last_seen: new Date().toISOString() }).eq("user_id", user.id).eq("device_id", deviceId); }, 30000);
+    return () => window.clearInterval(timer);
+  }, [user?.id, deviceId]);
   const go = (next: Screen) => {
     setScreen(next); setTargetProfile(null); setActiveConversation(null);
     if (next === "messages") loadConversations(); if (next === "notifications") loadNotifications();
@@ -265,7 +281,10 @@ export default function App() {
         <div className="profile-tabs"><span><ImagePlus size={17}/> POSTS</span></div><div className="profile-grid">{(displayedProfile.id === user.id ? posts.filter(p => p.user_id === user.id) : targetPosts).map(post => post.post_media?.[0] ? <button key={post.id} onClick={() => openComments(post)}><img src={post.post_media[0].media_url} alt={post.caption}/></button> : <div key={post.id} className="profile-text-post">{post.caption}</div>)}</div>
       </section>}
       {screen === "saved" && <section className="page-content"><h1>Saved</h1><div className="profile-grid">{visibleSavedPosts.map(post => post.post_media?.[0] && <button key={post.id} onClick={() => openComments(post)}><img src={post.post_media[0].media_url} alt={post.caption}/></button>)}</div>{savedIds.length === 0 && <p className="muted">Posts you save will appear here.</p>}</section>}
-      {screen === "settings" && <section className="page-content settings-page"><h1>Edit profile</h1><form onSubmit={saveProfile}><label>Full name<input value={settingsName} onChange={e => setSettingsName(e.target.value)} maxLength={60}/></label><label>Bio<textarea value={settingsBio} onChange={e => setSettingsBio(e.target.value)} maxLength={150}/></label><label>Website<input value={settingsWebsite} onChange={e => setSettingsWebsite(e.target.value)} placeholder="https://"/></label><button className="primary-button" disabled={savingProfile}>{savingProfile ? "Saving…" : "Save changes"}</button></form><button className="secondary-button logout-mobile" onClick={() => supabase?.auth.signOut()}>Log out</button></section>}
+      {screen === "settings" && <section className="page-content settings-page"><h1>Account settings</h1><form onSubmit={saveProfile}><label>Profile photo<input type="file" accept="image/*" onChange={e => setAvatarFile(e.target.files?.[0] || null)}/></label><label>Username<input required minLength={3} maxLength={24} value={settingsUsername} onChange={e => setSettingsUsername(e.target.value)}/></label><label>Full name<input value={settingsName} onChange={e => setSettingsName(e.target.value)} maxLength={60}/></label><label>Bio<textarea value={settingsBio} onChange={e => setSettingsBio(e.target.value)} maxLength={150}/></label><label>Website<input value={settingsWebsite} onChange={e => setSettingsWebsite(e.target.value)} placeholder="https://"/></label><button className="primary-button" disabled={savingProfile}>{savingProfile ? "Saving…" : "Save changes"}</button></form>
+        <div className="settings-section"><h2>Password</h2><form onSubmit={async e => { e.preventDefault(); if (!supabase || newPassword.length < 8) return; const { error } = await supabase.auth.updateUser({ password: newPassword }); if (error) setNotice(error.message); else { setNewPassword(""); setNotice("Password updated."); } }}><label>New password<input type="password" minLength={8} required value={newPassword} onChange={e => setNewPassword(e.target.value)} autoComplete="new-password"/></label><button className="primary-button">Update password</button></form></div>
+        <div className="settings-section"><h2>Where you're logged in</h2><button className="secondary-button" onClick={loadSessions}>Refresh devices</button><div className="device-list">{sessions.map(s => <div className="device-row" key={s.id}><div><strong>{s.device_name}</strong><small>{s.platform} · {s.device_id === deviceId ? "This device" : "Other device"} · {new Date(s.last_seen).toLocaleString()}</small></div>{s.device_id === deviceId ? <span>Current</span> : <button className="secondary-button" onClick={async () => { await supabase?.from("device_sessions").update({ revoked_at: new Date().toISOString() }).eq("id", s.id); await loadSessions(); }}>Sign out</button>}</div>)}</div></div>
+        <button className="secondary-button logout-mobile" onClick={() => supabase?.auth.signOut()}>Log out</button></section>}
       {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<X size={14}/></button>}
     </main>
     <aside className="right-rail"><div className="account-switch"><Avatar profile={profile} size={44}/><div><strong>{profile?.username}</strong><small>{profile?.full_name || user.email}</small></div><button onClick={() => go("profile")}>Profile</button></div>
