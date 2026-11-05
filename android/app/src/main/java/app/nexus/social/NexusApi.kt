@@ -77,14 +77,40 @@ class NexusApi(context: Context) {
             else -> null
         }
         builder.method(method, body)
-        client.newCall(builder.build()).execute().use { response ->
-            val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                val message = try { JSONObject(text).optString("message", JSONObject(text).optString("msg", text)) } catch (_: Exception) { text }
-                throw IOException(message.ifBlank { "Supabase request failed: HTTP " + response.code })
+        fun execute(bearer: String): Pair<Int, String> {
+            val requestBuilder = Request.Builder().url(baseUrl + path).header("apikey", anonKey)
+                .header("Authorization", "Bearer " + bearer).header("Accept", "application/json")
+            if (prefer != null) requestBuilder.header("Prefer", prefer)
+            requestBuilder.method(method, body)
+            return client.newCall(requestBuilder.build()).execute().use { response ->
+                Pair(response.code, response.body?.string().orEmpty())
             }
-            text
         }
+        var bearer = if (useSession) (accessToken ?: anonKey) else anonKey
+        var result = execute(bearer)
+        if (result.first == 401 && useSession) {
+            val refreshToken = prefs.getString("refresh_token", null)
+            if (!refreshToken.isNullOrBlank()) {
+                val refreshBody = JSONObject().put("refresh_token", refreshToken).toString()
+                    .toRequestBody("application/json; charset=utf-8".toMediaType())
+                val refreshRequest = Request.Builder().url(baseUrl + "/auth/v1/token?grant_type=refresh_token")
+                    .header("apikey", anonKey).header("Authorization", "Bearer " + anonKey)
+                    .post(refreshBody).build()
+                val refreshed = client.newCall(refreshRequest).execute().use { response ->
+                    Pair(response.code, response.body?.string().orEmpty())
+                }
+                if (refreshed.first in 200..299) {
+                    storeSession(JSONObject(refreshed.second))
+                    bearer = accessToken ?: anonKey
+                    result = execute(bearer)
+                }
+            }
+        }
+        if (result.first !in 200..299) {
+            val message = try { JSONObject(result.second).optString("message", JSONObject(result.second).optString("msg", result.second)) } catch (_: Exception) { result.second }
+            throw IOException(message.ifBlank { "Supabase request failed: HTTP " + result.first })
+        }
+        result.second
     }
     private fun encode(value: String) = URLEncoder.encode(value, "UTF-8")
 
@@ -124,7 +150,7 @@ class NexusApi(context: Context) {
         else request("POST", "/rest/v1/post_likes", JSONObject().put("post_id", postId).put("user_id", userId), prefer = "return=minimal")
     }
     suspend fun publishPost(caption: String, location: String, media: ByteArray?, mimeType: String, extension: String) {
-        val rows = JSONArray(request("POST", "/rest/v1/posts", JSONObject().put("user_id", userId).put("caption", caption).put("location", location.ifBlank { JSONObject.NULL }), prefer = "return=representation"))
+        val rows = JSONArray(request("POST", "/rest/v1/posts", JSONObject().put("user_id", userId).put("caption", caption).put("location", if (location.isBlank()) JSONObject.NULL else location), prefer = "return=representation"))
         val postId = rows.getJSONObject(0).getString("id")
         if (media == null) return
         val path = userId + "/" + java.util.UUID.randomUUID().toString() + "." + extension
