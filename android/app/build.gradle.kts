@@ -1,14 +1,20 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
-val localProperties = java.util.Properties().apply {
-    val file = rootProject.file("local.properties")
-    if (file.exists()) file.inputStream().use { load(it) }
+
+val localProperties = Properties().apply {
+    val propertiesFile = rootProject.file("local.properties")
+    if (propertiesFile.exists()) {
+        propertiesFile.inputStream().use { input -> load(input) }
+    }
 }
 val supabaseUrl = providers.gradleProperty("SUPABASE_URL").orElse(localProperties.getProperty("SUPABASE_URL", "")).get()
 val supabaseAnonKey = providers.gradleProperty("SUPABASE_ANON_KEY").orElse(localProperties.getProperty("SUPABASE_ANON_KEY", "")).get()
+
 android {
     namespace = "app.nexus.social"
     compileSdk = 35
@@ -23,6 +29,7 @@ android {
     }
     buildFeatures { compose = true; buildConfig = true }
 }
+
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.10.0")
