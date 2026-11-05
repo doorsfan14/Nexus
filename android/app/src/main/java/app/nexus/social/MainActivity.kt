@@ -31,6 +31,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import android.widget.VideoView
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -53,6 +55,10 @@ private fun NexusApp(api: NexusApi) {
     var signedIn by remember { mutableStateOf(api.isSignedIn) }
     var profile by remember { mutableStateOf<NexusProfile?>(null) }
     var feed by remember { mutableStateOf(emptyList<NexusPost>()) }
+    var savedPosts by remember { mutableStateOf(emptyList<NexusPost>()) }
+    var savedIds by remember { mutableStateOf(setOf<String>()) }
+    var followerCount by remember { mutableStateOf(0) }
+    var followingCount by remember { mutableStateOf(0) }
     var screen by remember { mutableStateOf("Home") }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
@@ -95,9 +101,16 @@ private fun NexusApp(api: NexusApi) {
     }
     fun openProfile(person: NexusProfile) {
         viewedProfile = person
-        viewedPosts = feed.filter { it.userId == person.id }
         screen = "Profile"
-        following = false
+        scope.launch {
+            try {
+                viewedPosts = api.postsForUser(person.id)
+                val counts = api.profileCounts(person.id)
+                followerCount = counts.first
+                followingCount = counts.second
+                following = if (person.id == api.userId) false else api.followStatus(person.id)
+            } catch (t: Throwable) { report(t) }
+        }
     }
 
     LaunchedEffect(signedIn) {
@@ -107,6 +120,8 @@ private fun NexusApp(api: NexusApi) {
                 editName = profile?.fullName.orEmpty()
                 editBio = profile?.bio.orEmpty()
                 feed = api.feed()
+                savedPosts = api.savedPosts()
+                savedIds = savedPosts.map { it.id }.toSet()
             } catch (t: Throwable) { report(t) }
         } else { profile = null; feed = emptyList() }
     }
@@ -155,7 +170,12 @@ private fun NexusApp(api: NexusApi) {
                         val liked = post.likes.contains(api.userId)
                         feed = feed.map { if (it.id == post.id) it.copy(likes = if (liked) it.likes - api.userId else it.likes + api.userId) else it }
                         scope.launch { try { api.toggleLike(post.id, liked) } catch (t: Throwable) { report(t); refreshFeed() } }
-                    }, onComment = { openComments(it) }, onProfile = { openProfile(it) }, modifier = Modifier.padding(padding))
+                    }, onComment = { openComments(it) }, onProfile = { openProfile(it) }, onSave = { post ->
+                        val already = savedIds.contains(post.id)
+                        savedIds = if (already) savedIds - post.id else savedIds + post.id
+                        savedPosts = if (already) savedPosts.filterNot { it.id == post.id } else savedPosts + post
+                        scope.launch { try { api.toggleSaved(post.id, already) } catch (t: Throwable) { report(t) } }
+                    }, savedIds = savedIds, modifier = Modifier.padding(padding))
                     "Explore" -> ExploreScreen(query, people, onQuery = { value ->
                         query = value
                         scope.launch { try { people = if (value.isBlank()) emptyList() else api.searchPeople(value) } catch (t: Throwable) { report(t) } }
@@ -172,12 +192,24 @@ private fun NexusApp(api: NexusApi) {
                         }, Modifier.padding(padding)
                     )
                     "Notifications" -> SimpleListScreen("Notifications", notifications, Modifier.padding(padding))
+                    "Saved" -> FeedScreen(savedPosts, api.userId, false, onRefresh = {
+                        scope.launch { try { savedPosts = api.savedPosts(); savedIds = savedPosts.map { it.id }.toSet() } catch (t: Throwable) { report(t) } }
+                    }, onLike = { post ->
+                        val liked = post.likes.contains(api.userId)
+                        savedPosts = savedPosts.map { if (it.id == post.id) it.copy(likes = if (liked) it.likes - api.userId else it.likes + api.userId) else it }
+                        scope.launch { try { api.toggleLike(post.id, liked) } catch (t: Throwable) { report(t) } }
+                    }, onComment = { openComments(it) }, onProfile = { openProfile(it) }, onSave = { post ->
+                        val already = savedIds.contains(post.id)
+                        savedIds = if (already) savedIds - post.id else savedIds + post.id
+                        savedPosts = if (already) savedPosts.filterNot { it.id == post.id } else savedPosts + post
+                        scope.launch { try { api.toggleSaved(post.id, already) } catch (t: Throwable) { report(t) } }
+                    }, savedIds = savedIds, modifier = Modifier.padding(padding))
                     "Profile" -> {
                         val person = viewedProfile ?: profile
                         if (person != null) ProfileScreen(
                             person, if (viewedProfile == null) feed.filter { it.userId == api.userId } else viewedPosts,
-                            person.id == api.userId, following, { profileEditOpen = true },
-                            { scope.launch { try { api.follow(person.id, following); following = !following } catch (t: Throwable) { report(t) } } },
+                            person.id == api.userId, following, followerCount, followingCount, { profileEditOpen = true }, { screen = "Saved" },
+                            { scope.launch { try { api.follow(person.id, following); following = !following; followerCount += if (following) 1 else -1 } catch (t: Throwable) { report(t) } } },
                             {
                                 scope.launch { try {
                                     val id = api.startConversation(person.id)
@@ -269,7 +301,7 @@ private fun AuthScreen(api: NexusApi, onSignedIn: () -> Unit, onError: (String) 
 }
 
 @Composable
-private fun FeedScreen(posts: List<NexusPost>, currentUser: String, loading: Boolean, onRefresh: () -> Unit, onLike: (NexusPost) -> Unit, onComment: (NexusPost) -> Unit, onProfile: (NexusProfile) -> Unit, modifier: Modifier = Modifier) {
+private fun FeedScreen(posts: List<NexusPost>, currentUser: String, loading: Boolean, onRefresh: () -> Unit, onLike: (NexusPost) -> Unit, onComment: (NexusPost) -> Unit, onProfile: (NexusProfile) -> Unit, onSave: (NexusPost) -> Unit, savedIds: Set<String>, modifier: Modifier = Modifier) {
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 12.dp)) {
         item {
             LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
@@ -287,7 +319,7 @@ private fun FeedScreen(posts: List<NexusPost>, currentUser: String, loading: Boo
                 TextButton(onClick = onRefresh) { Text("Refresh") }
             }
         }
-        items(posts, key = { it.id }) { post -> AndroidPostCard(post, currentUser, { onLike(post) }, { onComment(post) }, { onProfile(NexusProfile(post.userId, post.username, avatarUrl = post.avatarUrl)) }) }
+        items(posts, key = { it.id }) { post -> AndroidPostCard(post, currentUser, { onLike(post) }, { onComment(post) }, { onProfile(NexusProfile(post.userId, post.username, avatarUrl = post.avatarUrl)) }, { onSave(post) }, savedIds.contains(post.id)) }
     }
 }
 
@@ -303,7 +335,7 @@ private fun StoryBubble(name: String, avatar: String?) {
 }
 
 @Composable
-private fun AndroidPostCard(post: NexusPost, currentUser: String, onLike: () -> Unit, onComment: () -> Unit, onProfile: () -> Unit) {
+private fun AndroidPostCard(post: NexusPost, currentUser: String, onLike: () -> Unit, onComment: () -> Unit, onProfile: () -> Unit, onSave: () -> Unit, saved: Boolean) {
     Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
             AvatarImage(post.avatarUrl, 36)
@@ -313,14 +345,21 @@ private fun AndroidPostCard(post: NexusPost, currentUser: String, onLike: () -> 
             }
             Icon(Icons.Default.MoreHoriz, contentDescription = "More", tint = Ink)
         }
-        if (post.mediaUrl.isNotBlank()) AsyncImage(post.mediaUrl, contentDescription = post.caption, modifier = Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Crop)
+        if (post.mediaUrl.isNotBlank() && post.mediaType == "video") AndroidView(
+            factory = { viewContext -> VideoView(viewContext).apply {
+                setVideoURI(Uri.parse(post.mediaUrl))
+                setOnPreparedListener { player -> player.isLooping = true; start() }
+            } },
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+        )
+        else if (post.mediaUrl.isNotBlank()) AsyncImage(post.mediaUrl, contentDescription = post.caption, modifier = Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Crop)
         else Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Soft).padding(24.dp), contentAlignment = Alignment.Center) { Text(post.caption, color = Ink, fontSize = 22.sp) }
         Row(Modifier.fillMaxWidth().padding(horizontal = 7.dp), verticalAlignment = Alignment.CenterVertically) {
             val liked = post.likes.contains(currentUser)
             IconButton(onClick = onLike) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Like", tint = if (liked) Color(0xFFED4956) else Ink) }
             IconButton(onClick = onComment) { Icon(Icons.Default.ChatBubbleOutline, "Comment", tint = Ink) }
             IconButton(onClick = {}) { Icon(Icons.Default.Send, "Share", tint = Ink) }
-            Spacer(Modifier.weight(1f)); IconButton(onClick = {}) { Icon(Icons.Default.BookmarkBorder, "Save", tint = Ink) }
+            Spacer(Modifier.weight(1f)); IconButton(onClick = onSave) { Icon(if (saved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, "Save", tint = Ink) }
         }
         Text(post.likes.size.toString() + " likes", Modifier.padding(horizontal = 12.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Ink)
         if (post.caption.isNotBlank()) Text(post.username + "  " + post.caption, Modifier.padding(horizontal = 12.dp, vertical = 5.dp), fontSize = 12.sp, color = Ink)
@@ -354,7 +393,7 @@ private fun ExploreScreen(query: String, people: List<NexusProfile>, onQuery: (S
 }
 
 @Composable
-private fun ProfileScreen(person: NexusProfile, posts: List<NexusPost>, isOwn: Boolean, following: Boolean, onEdit: () -> Unit, onFollow: () -> Unit, onMessage: () -> Unit, onComment: (NexusPost) -> Unit, modifier: Modifier = Modifier) {
+private fun ProfileScreen(person: NexusProfile, posts: List<NexusPost>, isOwn: Boolean, following: Boolean, followerCount: Int, followingCount: Int, onEdit: () -> Unit, onSaved: () -> Unit, onFollow: () -> Unit, onMessage: () -> Unit, onComment: (NexusPost) -> Unit, modifier: Modifier = Modifier) {
     LazyColumn(modifier.fillMaxSize()) {
         item {
             Column(Modifier.fillMaxWidth().padding(18.dp)) {
@@ -365,15 +404,18 @@ private fun ProfileScreen(person: NexusProfile, posts: List<NexusPost>, isOwn: B
                         Spacer(Modifier.height(13.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                             Column { Text(posts.size.toString(), fontWeight = FontWeight.Bold); Text("posts", fontSize = 11.sp) }
-                            Column { Text("—", fontWeight = FontWeight.Bold); Text("followers", fontSize = 11.sp) }
-                            Column { Text("—", fontWeight = FontWeight.Bold); Text("following", fontSize = 11.sp) }
+                            Column { Text(followerCount.toString(), fontWeight = FontWeight.Bold); Text("followers", fontSize = 11.sp) }
+                            Column { Text(followingCount.toString(), fontWeight = FontWeight.Bold); Text("following", fontSize = 11.sp) }
                         }
                     }
                 }
                 if (person.fullName.isNotBlank()) Text(person.fullName, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp))
                 if (person.bio.isNotBlank()) Text(person.bio, modifier = Modifier.padding(top = 4.dp))
                 Spacer(Modifier.height(14.dp))
-                if (isOwn) OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) { Text("Edit profile") }
+                if (isOwn) {
+                    OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) { Text("Edit profile") }
+                    TextButton(onClick = onSaved, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.BookmarkBorder, null); Spacer(Modifier.width(7.dp)); Text("Saved posts") }
+                }
                 else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onFollow, modifier = Modifier.weight(1f)) { Text(if (following) "Following" else "Follow") }
                     OutlinedButton(onClick = onMessage, modifier = Modifier.weight(1f)) { Text("Message") }
@@ -381,7 +423,7 @@ private fun ProfileScreen(person: NexusProfile, posts: List<NexusPost>, isOwn: B
             }
             HorizontalDivider(color = Soft)
         }
-        items(posts, key = { it.id }) { post -> AndroidPostCard(post, "", {}, { onComment(post) }, {}) }
+        items(posts, key = { it.id }) { post -> AndroidPostCard(post, "", {}, { onComment(post) }, {}, {}, false) }
     }
 }
 
