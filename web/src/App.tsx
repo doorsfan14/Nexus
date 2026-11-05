@@ -171,7 +171,7 @@ export default function App() {
       if (uploadError) throw uploadError;
       const mediaUrl = supabase.storage.from("post-media").getPublicUrl(path).data.publicUrl;
       const { error } = await supabase.from("stories").insert({
-        user_id: user.id, storage_path: path, media_url: mediaUrl
+        user_id: user.id, storage_path: path, media_url: mediaUrl, media_type: storyFile.type.startsWith('video/') ? 'video' : 'image'
       });
       if (error) throw error;
       setStoryFile(null); setStoryComposerOpen(false); await loadStories();
