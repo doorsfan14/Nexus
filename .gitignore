@@ -1,0 +1,11 @@
+node_modules/
+web/dist/
+web/.env
+web/.env.*
+!web/.env.example
+android/.gradle/
+android/local.properties
+android/**/build/
+*.iml
+.idea/
+.DS_Store
