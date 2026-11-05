@@ -212,3 +212,31 @@ class NexusApi(context: Context) {
         return values
     }
 }
+
+    suspend fun postsForUser(profileId: String): List<NexusPost> {
+        val rows = JSONArray(request("GET", "/rest/v1/posts?select=id,user_id,caption,location,created_at,profiles!posts_user_id_fkey(id,username,avatar_url),post_media(id,media_url,media_type),post_likes(user_id),comments(count)&user_id=eq." + encode(profileId) + "&order=created_at.desc"))
+        return (0 until rows.length()).map { NexusPost.from(rows.getJSONObject(it)) }
+    }
+    suspend fun followStatus(profileId: String): Boolean {
+        val rows = JSONArray(request("GET", "/rest/v1/follows?select=follower_id&follower_id=eq." + encode(userId) + "&following_id=eq." + encode(profileId)))
+        return rows.length() > 0
+    }
+    suspend fun profileCounts(profileId: String): Pair<Int, Int> {
+        val followers = JSONArray(request("GET", "/rest/v1/follows?select=follower_id&following_id=eq." + encode(profileId)))
+        val following = JSONArray(request("GET", "/rest/v1/follows?select=following_id&follower_id=eq." + encode(profileId)))
+        return Pair(followers.length(), following.length())
+    }
+    suspend fun toggleSaved(postId: String, alreadySaved: Boolean) {
+        if (alreadySaved) request("DELETE", "/rest/v1/saved_posts?user_id=eq." + encode(userId) + "&post_id=eq." + encode(postId))
+        else request("POST", "/rest/v1/saved_posts", JSONObject().put("user_id", userId).put("post_id", postId), prefer = "return=minimal")
+    }
+    suspend fun savedPosts(): List<NexusPost> {
+        val rows = JSONArray(request("GET", "/rest/v1/saved_posts?select=posts(id,user_id,caption,location,created_at,profiles!posts_user_id_fkey(id,username,avatar_url),post_media(id,media_url,media_type),post_likes(user_id),comments(count))&user_id=eq." + encode(userId) + "&order=created_at.desc"))
+        val result = mutableListOf<NexusPost>()
+        for (i in 0 until rows.length()) {
+            val post = rows.getJSONObject(i).optJSONObject("posts") ?: continue
+            result.add(NexusPost.from(post))
+        }
+        return result
+    }
+
