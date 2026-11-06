@@ -29,7 +29,7 @@
       isa = PBXGroup;
       children = (
         A40000000000000000000002 /* Picstream */,
-        A20000000000000000000005 /* Products */,
+        A40000000000000000000003 /* Products */,
       );
       sourceTree = "<group>";
     };
@@ -44,7 +44,7 @@
         A20000000000000000000004 /* Assets.xcassets */,
       );
     };
-    A20000000000000000000005 /* Products */ = {
+    A40000000000000000000003 /* Products */ = {
       isa = PBXGroup;
       name = Products;
       sourceTree = "<group>";
@@ -87,7 +87,7 @@
       hasScannedForEncodings = 0;
       knownRegions = (en, Base);
       mainGroup = A40000000000000000000001;
-      productRefGroup = A20000000000000000000005 /* Products */;
+      productRefGroup = A40000000000000000000003 /* Products */;
       projectDirPath = "";
       projectRoot = "";
       targets = (A50000000000000000000001 /* Picstream */);
