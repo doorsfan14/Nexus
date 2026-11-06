@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 struct FeedProfile: Decodable {
     let username: String
