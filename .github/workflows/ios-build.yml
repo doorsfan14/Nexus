@@ -1,0 +1,68 @@
+name: Picstream iOS IPA
+
+on:
+  push:
+    branches: [main, "feat/**"]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    name: Native SwiftUI iOS build
+    runs-on: macos-26
+    env:
+      SUPABASE_URL: https://cjzajjvumfjamxxwnaea.supabase.co
+      SUPABASE_ANON_KEY: sb_publishable_k2shQkpp96DwuNhQdhHy1g_iiWot165
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          xcodebuild -version
+          xcodebuild -list -project ios/Picstream.xcodeproj
+
+      - name: Export original Picstream logo from Figma asset
+        run: |
+          mkdir -p ios/Picstream/Assets.xcassets/PicstreamLogo.imageset
+          curl --fail --location --retry 3 \
+            "https://www.figma.com/api/mcp/asset/7556ecea-5b87-4d51-bba7-c4e0a2fe45cd/1545b.png" \
+            --output ios/Picstream/Assets.xcassets/PicstreamLogo.imageset/PicstreamLogo.png
+          file ios/Picstream/Assets.xcassets/PicstreamLogo.imageset/PicstreamLogo.png
+
+      - name: Build native iOS application
+        run: |
+          xcodebuild \
+            -project ios/Picstream.xcodeproj \
+            -scheme Picstream \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath "$RUNNER_TEMP/PicstreamDerivedData" \
+            SUPABASE_URL="$SUPABASE_URL" \
+            SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="$RUNNER_TEMP/PicstreamDerivedData/Build/Products/Release-iphoneos/Picstream.app"
+          test -d "$APP_PATH"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP_PATH" "$RUNNER_TEMP/ipa/Payload/Picstream.app"
+          cd "$RUNNER_TEMP/ipa"
+          /usr/bin/zip -qry "$GITHUB_WORKSPACE/Picstream-unsigned.ipa" Payload
+          test -s "$GITHUB_WORKSPACE/Picstream-unsigned.ipa"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: picstream-ios-unsigned-ipa
+          path: Picstream-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
